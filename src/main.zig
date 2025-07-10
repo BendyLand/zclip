@@ -20,8 +20,18 @@ pub fn main() !void {
     else {
         // Args given → run in sender mode
         const arg = try std.mem.join(pg_alloc, " ", args[1..]);
-        const command = try cmd.parse(arg, pg_alloc); 
-        try daemon.sendCommandToDaemon(command); 
+        var command: cmd.Command = undefined;
+        if (std.mem.eql(u8, arg, "push")) {
+            // No argument? Try to read from stdin
+            var stdin_reader = std.io.getStdIn().reader();
+            var value = try stdin_reader.readAllAlloc(pg_alloc, 1024 * 1024);
+            value = @constCast(std.mem.trimEnd(u8, value, " \n"));
+            command = cmd.Command{ .Push = value };
+        }
+        else {
+            command = try cmd.parse(arg, pg_alloc);
+        }
+        try daemon.sendCommandToDaemon(command);
     }
 }
 
