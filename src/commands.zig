@@ -2,7 +2,7 @@ const std = @import("std");
 const Alloc = std.mem.Allocator;
 const pg_alloc = std.heap.page_allocator;
 
-pub const INPUT_MAX: comptime_int = 256;
+pub const INPUT_MAX: comptime_int = 1024;
 
 pub const Command = union(enum) {
     Get: usize,
@@ -43,7 +43,7 @@ pub fn toSocketMessage(self: Command) []const u8 {
 pub fn getInput(dest: *[]u8, allocator: Alloc) !void {
     var reader = std.io.getStdIn().reader();
     const buf = try reader.readUntilDelimiterAlloc(allocator, '\n', INPUT_MAX);
-    defer Alloc.free(pg_alloc, buf);
+    defer Alloc.free(allocator, buf);
     std.mem.copyForwards(u8, dest.*, buf);
 }
 

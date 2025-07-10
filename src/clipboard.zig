@@ -101,7 +101,7 @@ pub const ClipboardContext = struct {
             return error.FailedToTakeClipboard;
         }
         // Store your data locally so you can respond to SelectionRequests
-        const text_copy = try std.heap.page_allocator.dupe(u8, text); // Replace with your allocator
+        const text_copy = try std.heap.page_allocator.dupe(u8, text); 
         _ = c.XInternAtom(display, "ZCLIP_TEMP_PROP", 0); // prop_name
         var event: c.XEvent = undefined;
         var got_request = false;

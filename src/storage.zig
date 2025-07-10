@@ -16,19 +16,6 @@ pub const Tray = struct {
         }
         self.items.deinit();
     }
-
-    pub fn setFromMap(self: *Tray, map: *const std.StringHashMap(u16)) !void {
-        for (self.items.items) |item| {
-            self.items.allocator.free(item);
-        }
-        try self.items.resize(map.count());
-        var it = map.iterator();
-        while (it.next()) |entry| {
-            const key = entry.key_ptr.*;
-            const copied = try self.items.allocator.dupe(u8, key);
-            try self.items[entry.value_ptr.*](copied);
-        }
-    }
 };
 
 pub const MasterList = struct {

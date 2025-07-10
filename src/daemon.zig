@@ -55,7 +55,7 @@ pub fn runDaemon(allocator: std.mem.Allocator) !void {
         }
         const conn_fd = try std.posix.accept(listener_fd, null, null, std.posix.SOCK.NONBLOCK);
         defer std.posix.close(conn_fd);
-        var buf: [1024]u8 = undefined;
+        var buf: [1024*1024]u8 = undefined;
         const bytes_read = try std.posix.read(conn_fd, &buf);
         const input = buf[0..bytes_read];
         const command = cmd.parse(input, allocator) catch {
@@ -128,7 +128,7 @@ fn handleCommand(
             // Fork and daemonize
             if (try std.posix.fork() == 0) {
                 // In child
-                std.posix.close(conn_fd); // <<< ADD THIS LINE HERE
+                std.posix.close(conn_fd); 
                 try daemonize("/tmp/zclip-set.log", false);
                 var cb2 = try cb.ClipboardContext.init();
                 defer cb2.deinit();
@@ -181,7 +181,7 @@ pub fn sendCommandToDaemon(command: cmd.Command) !void {
     const msg = cmd.toSocketMessage(command);
     _ = try std.posix.write(fd, msg);
     // Optionally: read a response
-    var buf: [1024]u8 = undefined;
+    var buf: [1024*1024]u8 = undefined;
     const n = try std.posix.read(fd, &buf);
     const response = buf[0..n];
     std.debug.print("Daemon responded:\n{s}\n", .{response});
