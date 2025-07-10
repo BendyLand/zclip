@@ -1,4 +1,5 @@
 output*
 summary*
 leaks*
+.zig-cache/*
 
