@@ -21,7 +21,7 @@ pub const Tray = struct {
         for (self.items.items) |item| {
             self.items.allocator.free(item);
         }
-        try self.items.resize(map.count()); 
+        try self.items.resize(map.count());
         var it = map.iterator();
         while (it.next()) |entry| {
             const key = entry.key_ptr.*;
@@ -78,25 +78,24 @@ pub const MasterList = struct {
         // Sort entries by insertion index
         tray.items = try sortKeysByValue(self.*.allocator, self.items);
     }
-};
 
-pub fn sortKeysByValue(
-    allocator: std.mem.Allocator,
-    map: std.StringHashMap(u16),
-) !std.ArrayList([]const u8) {
-    var list = std.ArrayList([]const u8).init(allocator);
-    var it = map.keyIterator();
-    while (it.next()) |key| {
-        try list.append(key.*);
-    }
-    const Ctx = struct {
+    pub fn sortKeysByValue(
+        allocator: std.mem.Allocator,
         map: std.StringHashMap(u16),
-        pub fn lessThan(self: @This(), a: []const u8, b: []const u8) bool {
-            return self.map.get(a).? < self.map.get(b).?;
+    ) !std.ArrayList([]const u8) {
+        var list = std.ArrayList([]const u8).init(allocator);
+        var it = map.keyIterator();
+        while (it.next()) |key| {
+            try list.append(key.*);
         }
-    };
-    std.mem.sort([]const u8, list.items, Ctx{ .map = map }, Ctx.lessThan);
-    return list;
-}
-
+        const Ctx = struct {
+            map: std.StringHashMap(u16),
+            pub fn lessThan(self: @This(), a: []const u8, b: []const u8) bool {
+                return self.map.get(a).? < self.map.get(b).?;
+            }
+        };
+        std.mem.sort([]const u8, list.items, Ctx{ .map = map }, Ctx.lessThan);
+        return list;
+    }
+};
 

@@ -118,8 +118,8 @@ fn handleCommand(
         },
         .Get => |idx| {
             var index = idx;
-            if (idx <= 0) index = 1 
-            else if (idx >= tray.items.items.len) index = tray.items.items.len; 
+            if (idx <= 0) index = 1
+            else if (idx >= tray.items.items.len) index = tray.items.items.len;
             index -= 1;
             const val = tray.items.items[index];
             // Write response *before* forking
