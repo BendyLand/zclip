@@ -34,6 +34,7 @@ pub fn build(b: *std.Build) void {
     });
 
     exe.linkSystemLibrary("X11");
+    exe.linkSystemLibrary("Xfixes");
     exe.linkSystemLibrary("dl");
 
     exe.addIncludePath(.{ .cwd_relative = "/usr/include" });

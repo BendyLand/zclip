@@ -4,10 +4,6 @@ const storage = @import("storage.zig");
 const cmd = @import("commands.zig");
 const os = std.os;
 const fs = std.fs;
-const c = @cImport({
-    @cInclude("signal.h");
-    @cInclude("sys/wait.h");
-});
 
 const sockaddr_un = extern struct {
     family: std.posix.sa_family_t,
@@ -22,11 +18,9 @@ fn makeSockAddrUn(path: []const u8) sockaddr_un {
 }
 
 pub fn runDaemon(allocator: std.mem.Allocator) !void {
-    // At the top of runDaemon, after any initialization:
-    _ = c.signal(c.SIGCHLD, handle_sigchld);
+    _ = cb.c.signal(cb.c.SIGCHLD, handle_sigchld);
     var clipboard = try cb.ClipboardContext.init();
     defer clipboard.deinit();
-    var last_poll = try std.time.Instant.now();
     var tray = storage.Tray.init(allocator);
     defer tray.deinit();
     var master = storage.MasterList.init(allocator);
@@ -40,11 +34,25 @@ pub fn runDaemon(allocator: std.mem.Allocator) !void {
     try std.posix.bind(listener_fd, sockaddr_ptr, sockaddr_len);
     try std.posix.listen(listener_fd, 10);
     std.debug.print("Daemon listening on {s}\n", .{socket_path});
-    const poll_interval_ns = std.time.ns_per_s; // 1s
+    // Set up XFixes 
+    var xfixes_event_base: c_int = 0;
+    var xfixes_error_base: c_int = 0;
+    if (cb.c.XFixesQueryExtension(clipboard.display, &xfixes_event_base, &xfixes_error_base) == 0) {
+        return error.XFixesNotAvailable;
+    }
+    // Register for clipboard selection change notifications
+    const clipboard_atom = cb.c.XInternAtom(clipboard.display, "CLIPBOARD", 0);
+    cb.c.XFixesSelectSelectionInput(
+        clipboard.display,
+        clipboard.window, // invisible window that owns the clipboard selection
+        clipboard_atom,
+        cb.c.XFixesSetSelectionOwnerNotifyMask,
+    );
+    var conn_buf: [1024 * 1024]u8 = undefined;
     while (true) {
-        const now = try std.time.Instant.now();
-        if (now.since(last_poll) >= poll_interval_ns) {
-            last_poll = now;
+        var event: cb.c.XEvent = undefined;
+        _ = cb.c.XNextEvent(clipboard.display, &event); // blocks until X event arrives
+        if (event.type == xfixes_event_base + cb.c.XFixesSelectionNotify) {
             const polled = clipboard.captureClipboard(&allocator) catch null;
             if (polled) |text| {
                 if (!master.items.contains(text)) {
@@ -53,16 +61,18 @@ pub fn runDaemon(allocator: std.mem.Allocator) !void {
                 }
             }
         }
-        const conn_fd = try std.posix.accept(listener_fd, null, null, std.posix.SOCK.NONBLOCK);
-        defer std.posix.close(conn_fd);
-        var buf: [1024*1024]u8 = undefined;
-        const bytes_read = try std.posix.read(conn_fd, &buf);
-        const input = buf[0..bytes_read];
-        const command = cmd.parse(input, allocator) catch {
-            _ = try std.posix.write(conn_fd, "ERR Invalid Command\n");
-            continue;
-        };
-        try handleCommand(command, &master, &tray, conn_fd, allocator);
+        // Non-blocking socket check (optional)
+        const conn_fd = std.posix.accept(listener_fd, null, null, std.posix.SOCK.NONBLOCK) catch null;
+        if (conn_fd) |fd| {
+            defer std.posix.close(fd);
+            const bytes_read = try std.posix.read(conn_fd.?, &conn_buf);
+            const input = conn_buf[0..bytes_read];
+            const command = cmd.parse(input, allocator) catch {
+                _ = try std.posix.write(conn_fd.?, "ERR Invalid Command\n");
+                continue;
+            };
+            try handleCommand(command, &master, &tray, conn_fd.?, allocator);
+        }
     }
 }
 
@@ -118,8 +128,7 @@ fn handleCommand(
         },
         .Get => |idx| {
             var index = idx;
-            if (idx <= 0) index = 1
-            else if (idx >= tray.items.items.len) index = tray.items.items.len;
+            if (idx <= 0) index = 1 else if (idx >= tray.items.items.len) index = tray.items.items.len;
             index -= 1;
             const val = tray.items.items[index];
             // Write response *before* forking
@@ -128,7 +137,7 @@ fn handleCommand(
             // Fork and daemonize
             if (try std.posix.fork() == 0) {
                 // In child
-                std.posix.close(conn_fd); 
+                std.posix.close(conn_fd);
                 try daemonize("/tmp/zclip-set.log", false);
                 var cb2 = try cb.ClipboardContext.init();
                 defer cb2.deinit();
@@ -181,7 +190,7 @@ pub fn sendCommandToDaemon(command: cmd.Command) !void {
     const msg = cmd.toSocketMessage(command);
     _ = try std.posix.write(fd, msg);
     // Optionally: read a response
-    var buf: [1024*1024]u8 = undefined;
+    var buf: [1024 * 1024]u8 = undefined;
     const n = try std.posix.read(fd, &buf);
     const response = buf[0..n];
     std.debug.print("Daemon responded:\n{s}\n", .{response});

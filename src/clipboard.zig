@@ -1,11 +1,16 @@
 const std = @import("std");
 const fs = std.fs;
 const daemon = @import("daemon.zig");
-
-const c = @cImport({
+// All c imports MUST be placed here
+pub const c = @cImport({
     @cInclude("dlfcn.h");
+    @cInclude("signal.h");
     @cInclude("X11/Xlib.h");
     @cInclude("X11/Xatom.h");
+    @cInclude("X11/Xlib.h");
+    @cInclude("X11/Xatom.h");
+    @cInclude("X11/extensions/Xfixes.h");
+    @cDefine("XFIXES", "1");
 });
 
 const Display = opaque {};
@@ -101,7 +106,7 @@ pub const ClipboardContext = struct {
             return error.FailedToTakeClipboard;
         }
         // Store your data locally so you can respond to SelectionRequests
-        const text_copy = try std.heap.page_allocator.dupe(u8, text); 
+        const text_copy = try std.heap.page_allocator.dupe(u8, text);
         _ = c.XInternAtom(display, "ZCLIP_TEMP_PROP", 0); // prop_name
         var event: c.XEvent = undefined;
         var got_request = false;
