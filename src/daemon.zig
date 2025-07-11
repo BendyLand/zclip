@@ -34,7 +34,7 @@ pub fn runDaemon(allocator: std.mem.Allocator) !void {
     try std.posix.bind(listener_fd, sockaddr_ptr, sockaddr_len);
     try std.posix.listen(listener_fd, 10);
     std.debug.print("Daemon listening on {s}\n", .{socket_path});
-    // Set up XFixes 
+    // Set up XFixes
     var xfixes_event_base: c_int = 0;
     var xfixes_error_base: c_int = 0;
     if (cb.c.XFixesQueryExtension(clipboard.display, &xfixes_event_base, &xfixes_error_base) == 0) {
@@ -49,29 +49,61 @@ pub fn runDaemon(allocator: std.mem.Allocator) !void {
         cb.c.XFixesSetSelectionOwnerNotifyMask,
     );
     var conn_buf: [1024 * 1024]u8 = undefined;
+    const POLLIN = 0x001;
+    const PollFd = cb.c.struct_pollfd;
+
+    var poll_fds: [2]PollFd = .{
+        .{ .fd = cb.c.XConnectionNumber(clipboard.display), .events = POLLIN, .revents = 0 },
+        .{ .fd = listener_fd, .events = POLLIN, .revents = 0 },
+    };
+    const EINTR = 4; // POSIX standard: Interrupted system call
     while (true) {
-        var event: cb.c.XEvent = undefined;
-        _ = cb.c.XNextEvent(clipboard.display, &event); // blocks until X event arrives
-        if (event.type == xfixes_event_base + cb.c.XFixesSelectionNotify) {
-            const polled = clipboard.captureClipboard(&allocator) catch null;
-            if (polled) |text| {
-                if (!master.items.contains(text)) {
-                    try master.add(text);
-                    try master.updateTray(&tray);
+        const ready = blk: {
+            while (true) {
+                const rc = cb.c.poll(&poll_fds, poll_fds.len, -1);
+                if (rc >= 0) break :blk rc;
+                const errno = std.posix.errno(rc);
+                if (@intFromEnum(errno) == EINTR) {
+                    std.debug.print("poll() interrupted by signal, retrying...\n", .{});
+                    continue;
+                }
+                std.debug.print("poll() failed with errno {}: {any}\n", .{ errno, errno });
+                return error.PollFailed;
+            }
+        };
+        if (ready <= 0) {
+            std.debug.print("poll() returned {}, but no fds are ready.\n", .{ ready });
+            continue;
+        }
+        // X11 clipboard events
+        if (poll_fds[0].revents & POLLIN != 0) {
+            var event: cb.c.XEvent = undefined;
+            while (cb.c.XPending(clipboard.display) > 0) {
+                _ = cb.c.XNextEvent(clipboard.display, &event);
+                if (event.type == xfixes_event_base + cb.c.XFixesSelectionNotify) {
+                    const polled = clipboard.captureClipboard(&allocator) catch null;
+                    if (polled) |text| {
+                        if (!master.items.contains(text)) {
+                            try master.add(text);
+                            try master.updateTray(&tray);
+                        }
+                    }
                 }
             }
         }
-        // Non-blocking socket check (optional)
-        const conn_fd = std.posix.accept(listener_fd, null, null, std.posix.SOCK.NONBLOCK) catch null;
-        if (conn_fd) |fd| {
-            defer std.posix.close(fd);
-            const bytes_read = try std.posix.read(conn_fd.?, &conn_buf);
-            const input = conn_buf[0..bytes_read];
-            const command = cmd.parse(input, allocator) catch {
-                _ = try std.posix.write(conn_fd.?, "ERR Invalid Command\n");
-                continue;
-            };
-            try handleCommand(command, &master, &tray, conn_fd.?, allocator);
+        // Socket commands
+        if (poll_fds[1].revents & POLLIN != 0) {
+            const conn_fd = std.posix.accept(listener_fd, null, null, std.posix.SOCK.NONBLOCK) catch null;
+            if (conn_fd) |fd| {
+                defer std.posix.close(fd);
+                const bytes_read = try std.posix.read(fd, &conn_buf);
+                const input = conn_buf[0..bytes_read];
+                const command = cmd.parse(input, allocator) catch {
+                    _ = try std.posix.write(fd, "ERR Invalid Command\n");
+                    continue;
+                };
+                try handleCommand(command, &master, &tray, fd, allocator);
+            }
         }
     }
 }

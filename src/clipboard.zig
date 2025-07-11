@@ -5,6 +5,7 @@ const daemon = @import("daemon.zig");
 pub const c = @cImport({
     @cInclude("dlfcn.h");
     @cInclude("signal.h");
+    @cInclude("poll.h");
     @cInclude("X11/Xlib.h");
     @cInclude("X11/Xatom.h");
     @cInclude("X11/Xlib.h");
@@ -12,6 +13,31 @@ pub const c = @cImport({
     @cInclude("X11/extensions/Xfixes.h");
     @cDefine("XFIXES", "1");
 });
+
+const POLLIN = 0x001;
+
+pub fn eventLoop(display_fd: c_int, listener_fd: c_int) !void {
+    var fds: [2]c.struct_pollfd = .{
+        .{ .fd = display_fd, .events = POLLIN, .revents = 0 },
+        .{ .fd = listener_fd, .events = POLLIN, .revents = 0 },
+    };
+
+    while (true) {
+        const result = c.poll(&fds[0], 2, -1); // block indefinitely
+        if (result < 0) return error.PollFailed;
+
+        if (fds[0].revents & POLLIN != 0) {
+            // X11 event available
+            // handle your X11 event here
+        }
+
+        if (fds[1].revents & POLLIN != 0) {
+            // socket command available
+            // handle your socket connection here
+        }
+    }
+}
+
 
 const Display = opaque {};
 const OpenDisplayFn = *const fn (?[*:0]const u8) callconv(.C) ?*c.Display;
