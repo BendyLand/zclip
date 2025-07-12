@@ -51,16 +51,18 @@ pub fn runDaemon(allocator: std.mem.Allocator) !void {
     var conn_buf: [1024 * 1024]u8 = undefined;
     const POLLIN = 0x001;
     const PollFd = cb.c.struct_pollfd;
-
     var poll_fds: [2]PollFd = .{
         .{ .fd = cb.c.XConnectionNumber(clipboard.display), .events = POLLIN, .revents = 0 },
         .{ .fd = listener_fd, .events = POLLIN, .revents = 0 },
     };
+    var last_clip_owner: cb.c.Window = 0;
+    const poll_interval_ns = std.time.ns_per_s; // Poll every 1 second
+    var last_poll = try std.time.Instant.now();
     const EINTR = 4; // POSIX standard: Interrupted system call
     while (true) {
         const ready = blk: {
             while (true) {
-                const rc = cb.c.poll(&poll_fds, poll_fds.len, -1);
+                const rc = cb.c.poll(&poll_fds, poll_fds.len, 100); // small timeout
                 if (rc >= 0) break :blk rc;
                 const errno = std.posix.errno(rc);
                 if (@intFromEnum(errno) == EINTR) {
@@ -71,27 +73,54 @@ pub fn runDaemon(allocator: std.mem.Allocator) !void {
                 return error.PollFailed;
             }
         };
-        if (ready <= 0) {
-            std.debug.print("poll() returned {}, but no fds are ready.\n", .{ ready });
-            continue;
-        }
-        // X11 clipboard events
+        if (ready <= 0) continue;
+        const now = try std.time.Instant.now();
+        // Handle clipboard change via XFixes event
         if (poll_fds[0].revents & POLLIN != 0) {
             var event: cb.c.XEvent = undefined;
             while (cb.c.XPending(clipboard.display) > 0) {
                 _ = cb.c.XNextEvent(clipboard.display, &event);
                 if (event.type == xfixes_event_base + cb.c.XFixesSelectionNotify) {
-                    const polled = clipboard.captureClipboard(&allocator) catch null;
-                    if (polled) |text| {
-                        if (!master.items.contains(text)) {
-                            try master.add(text);
-                            try master.updateTray(&tray);
+                    const current_owner = cb.c.XGetSelectionOwner(clipboard.display, clipboard_atom);
+                    if (current_owner != last_clip_owner and current_owner != 0) {
+                        last_clip_owner = current_owner;
+                        const polled = clipboard.captureClipboard(&allocator) catch null;
+                        if (polled) |text| {
+                            if (!master.items.contains(text)) {
+                                try master.add(text);
+                                try master.updateTray(&tray);
+                            }
                         }
                     }
                 }
             }
         }
-        // Socket commands
+        if (now.since(last_poll) >= std.time.ns_per_s) {
+            last_poll = now;
+            const polled = clipboard.captureClipboard(&allocator) catch null;
+            if (polled) |text| {
+                if (!master.items.contains(text)) {
+                    try master.add(text);
+                    try master.updateTray(&tray);
+                }
+            }
+        }
+        // Fallback polling every N seconds
+        if (now.since(last_poll) >= poll_interval_ns) {
+            last_poll = now;
+            const current_owner = cb.c.XGetSelectionOwner(clipboard.display, clipboard_atom);
+            if (current_owner != 0 and current_owner != last_clip_owner) {
+                last_clip_owner = current_owner;
+                const maybe_text = clipboard.captureClipboard(&allocator) catch null;
+                if (maybe_text) |text| {
+                    if (!master.items.contains(text)) {
+                        try master.add(text);
+                        try master.updateTray(&tray);
+                    }
+                }
+            }
+        }
+        // Handle socket commands
         if (poll_fds[1].revents & POLLIN != 0) {
             const conn_fd = std.posix.accept(listener_fd, null, null, std.posix.SOCK.NONBLOCK) catch null;
             if (conn_fd) |fd| {
