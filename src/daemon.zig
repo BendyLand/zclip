@@ -247,7 +247,8 @@ fn handleCommand(
             _ = try std.posix.write(conn_fd, HELP_MSG);
         },
         .Reset => {
-            try master.add("");
+            try master.items.put("", master.latest);
+            master.latest = 0;
             try master.updateTray(tray);
             if (tray.items.items.len == 0) {
                 _ = try std.posix.write(conn_fd, "ERR No items in tray\n");
@@ -263,12 +264,12 @@ fn handleCommand(
         .Save => {
             var db = try storage.DB.init();
             try db.saveEntries(master);
-            _ = try std.posix.write(conn_fd, "OK");
+            _ = try std.posix.write(conn_fd, "OK\n");
         },
         .Load => {
             var db = try storage.DB.init();
             try db.loadEntries(master, allocator);
-            _ = try std.posix.write(conn_fd, "OK");
+            _ = try std.posix.write(conn_fd, "OK\n");
         },
     }
 }
