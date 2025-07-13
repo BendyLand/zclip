@@ -248,7 +248,6 @@ fn handleCommand(
         },
         .Reset => {
             try master.items.put("", master.latest);
-            master.latest = 0;
             try master.updateTray(tray);
             if (tray.items.items.len == 0) {
                 _ = try std.posix.write(conn_fd, "ERR No items in tray\n");
