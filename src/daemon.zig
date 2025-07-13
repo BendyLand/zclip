@@ -30,7 +30,6 @@ pub const HELP_MSG =
     \\
 ;
 
-
 const sockaddr_un = extern struct {
     family: std.posix.sa_family_t,
     path: [108]u8,
@@ -260,6 +259,16 @@ fn handleCommand(
             tray.*.items.items.len = 0;
             master.*.items.clearRetainingCapacity();
             master.*.latest = 0;
+        },
+        .Save => {
+            var db = try storage.DB.init();
+            try db.saveEntries(master);
+            _ = try std.posix.write(conn_fd, "OK");
+        },
+        .Load => {
+            var db = try storage.DB.init();
+            try db.loadEntries(master, allocator);
+            _ = try std.posix.write(conn_fd, "OK");
         },
     }
 }

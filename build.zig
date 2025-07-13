@@ -42,6 +42,12 @@ pub fn build(b: *std.Build) void {
     exe.addIncludePath(.{ .cwd_relative = "/usr/include/x86_64-linux-gnu" });
     exe.addIncludePath(.{ .cwd_relative = "/usr/lib/gcc/x86_64-linux-gnu/13/include" });
 
+    const sqlite = b.dependency("sqlite", .{
+        .target = target,
+        .optimize = optimize,
+    });
+    exe.root_module.addImport("sqlite", sqlite.module("sqlite"));
+
     // This declares intent for the executable to be installed into the
     // standard location when the user invokes the "install" step (the default
     // step when running `zig build`).
