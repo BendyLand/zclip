@@ -5,7 +5,31 @@ const cmd = @import("commands.zig");
 const os = std.os;
 const fs = std.fs;
 
-pub const HELP_MSG = "Welcome to the zclip help menu!\nTo use this tool, first start the daemon by running zclip with no arguments.\nOnce the daemon is running, it will continuously poll the system clipboard and update its internal master list automatically.\nTo interact with the daemon directly, you can you the following commands:\n\tpush <entry> - Manually add an item to the clipboard\n\tget <number> - Set your *system* clipboard to the contents of the given entry\n\t\t\t - (Note: use `list` to find the entry numbers)\n\tlist - Print a list of the currently saved entries\n\tclear - Removes all items from the clipboard\n\t\t - (Note: whatever you have saved when you clear the list will immediately become the new first entry)\n\treset - An alias for `zclip push \"\" && zclip get 10000 && zclip clear`\n\t\t - (Note: This clears your system clipboard and clears the list, making an empty string the new first entry)\n\thelp - Print this help menu\n\texit - Stop the running daemon\n\t\t - (Note: This permanently clears *all* saved clipboard contents)\n\nIf you are getting errors from running the commands, the daemon likely crashed previously.\nManually remove `/tmp/zclip.sock` and restart the daemon, then it should work normally again.\nYou can check `/tmp/zclip.log` to see what might've happened.\n";
+pub const HELP_MSG =
+    \\Welcome to the zclip help menu!
+    \\Run `zclip` with no arguments to start the daemon.
+    \\Once running, it continuously monitors the system clipboard and tracks new entries automatically.
+    \\
+    \\Available commands:
+    \\  push <entry>     - Manually add an entry to the clipboard
+    \\  get <number>     - Set your system clipboard to the contents of a saved entry
+    \\                     (Tip: use `zclip list` to see entry numbers)
+    \\  list             - Show all currently saved entries
+    \\  clear            - Remove all saved items from the list
+    \\                     (Note: the current system clipboard becomes the new first entry)
+    \\  reset            - Shortcut for: zclip push "" -> zclip get 10000 -> zclip clear
+    \\                     (Effectively empties both clipboard *and* saved list)
+    \\  help             - Print this help menu
+    \\  exit             - Shut down the daemon and wipe all saved entries
+    \\
+    \\Troubleshooting:
+    \\  If commands fail, the daemon may have crashed or exited uncleanly.
+    \\  - Remove `/tmp/zclip.sock` manually
+    \\  - Restart the daemon by running `zclip` again
+    \\  - Check `/tmp/zclip.log` for logs
+    \\
+;
+
 
 const sockaddr_un = extern struct {
     family: std.posix.sa_family_t,
