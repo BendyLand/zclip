@@ -10,6 +10,8 @@ pub const Command = union(enum) {
     List,
     Clear,
     Exit,
+    Reset,
+    Help,
 };
 
 pub fn parse(input: []const u8, allocator: std.mem.Allocator) !Command {
@@ -26,7 +28,12 @@ pub fn parse(input: []const u8, allocator: std.mem.Allocator) !Command {
         const copied = try allocator.dupe(u8, rest);
         result = Command{ .Push = copied };
     }
-    else if (std.mem.eql(u8, "list", cmd)) result = Command.List else if (std.mem.eql(u8, "clear", cmd)) result = Command.Clear else if (std.mem.eql(u8, "exit", cmd)) result = Command.Exit else return error.UnknownCommand;
+    else if (std.mem.eql(u8, "list", cmd)) result = Command.List
+    else if (std.mem.eql(u8, "clear", cmd)) result = Command.Clear
+    else if (std.mem.eql(u8, "exit", cmd)) result = Command.Exit
+    else if (std.mem.eql(u8, "help", cmd)) result = Command.Help
+    else if (std.mem.eql(u8, "reset", cmd)) result = Command.Reset
+    else return error.UnknownCommand;
     return result;
 }
 
@@ -37,6 +44,8 @@ pub fn toSocketMessage(self: Command) []const u8 {
         .List => "list",
         .Clear => "clear",
         .Exit => "exit",
+        .Help => "help",
+        .Reset => "reset",
     };
 }
 

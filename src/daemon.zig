@@ -5,6 +5,8 @@ const cmd = @import("commands.zig");
 const os = std.os;
 const fs = std.fs;
 
+pub const HELP_MSG = "Welcome to the zclip help menu!\nTo use this tool, first start the daemon by running zclip with no arguments.\nOnce the daemon is running, it will continuously poll the system clipboard and update its internal master list automatically.\nTo interact with the daemon directly, you can you the following commands:\n\tpush <entry> - Manually add an item to the clipboard\n\tget <number> - Set your *system* clipboard to the contents of the given entry\n\t\t\t - (Note: use `list` to find the entry numbers)\n\tlist - Print a list of the currently saved entries\n\tclear - Removes all items from the clipboard\n\t\t - (Note: whatever you have saved when you clear the list will immediately become the new first entry)\n\treset - An alias for `zclip push \"\" && zclip get 10000 && zclip clear`\n\t\t - (Note: This clears your system clipboard and clears the list, making an empty string the new first entry)\n\thelp - Print this help menu\n\texit - Stop the running daemon\n\t\t - (Note: This permanently clears *all* saved clipboard contents)\n\nIf you are getting errors from running the commands, the daemon likely crashed previously.\nManually remove `/tmp/zclip.sock` and restart the daemon, then it should work normally again.\nYou can check `/tmp/zclip.log` to see what might've happened.\n";
+
 const sockaddr_un = extern struct {
     family: std.posix.sa_family_t,
     path: [108]u8,
@@ -217,6 +219,23 @@ fn handleCommand(
             try fs.cwd().deleteFile("/tmp/zclip.sock");
             std.debug.print("Shutting down zclip daemon\n", .{});
             std.posix.exit(0); // or break the loop
+        },
+        .Help => {
+            _ = try std.posix.write(conn_fd, HELP_MSG);
+        },
+        .Reset => {
+            try master.add("");
+            try master.updateTray(tray);
+            if (tray.items.items.len == 0) {
+                _ = try std.posix.write(conn_fd, "ERR No items in tray\n");
+                return;
+            }
+            // .Get = 10000 will wrap to the last valid index in the current list
+            // (unless someone manages to fit 10000 unique items in their list without an OOM error)
+            try handleCommand(cmd.Command{ .Get = 10000 }, master, tray, conn_fd, allocator);
+            tray.*.items.items.len = 0;
+            master.*.items.clearRetainingCapacity();
+            master.*.latest = 0;
         },
     }
 }
