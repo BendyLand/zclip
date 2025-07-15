@@ -262,12 +262,18 @@ fn handleCommand(
         },
         .Save => {
             var db = try storage.DB.init();
-            try db.saveEntries(master);
+            db.saveEntries(master) catch {
+                _ = try std.posix.write(conn_fd, "ERR Unable to create persistent storage\n");
+                return;
+            };
             _ = try std.posix.write(conn_fd, "OK\n");
         },
         .Load => {
             var db = try storage.DB.init();
-            try db.loadEntries(master, allocator);
+            db.loadEntries(master, allocator) catch {
+                _ = try std.posix.write(conn_fd, "ERR No saved entries found\n");
+                return;
+            };
             _ = try std.posix.write(conn_fd, "OK\n");
         },
     }
