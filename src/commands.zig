@@ -14,6 +14,7 @@ pub const Command = union(enum) {
     Help,
     Save,
     Load,
+    Len,
 };
 
 pub fn parse(input: []const u8, allocator: std.mem.Allocator) !Command {
@@ -37,6 +38,7 @@ pub fn parse(input: []const u8, allocator: std.mem.Allocator) !Command {
     else if (std.mem.eql(u8, "reset", cmd)) result = Command.Reset
     else if (std.mem.eql(u8, "save", cmd)) result = Command.Save
     else if (std.mem.eql(u8, "load", cmd)) result = Command.Load
+    else if (std.mem.eql(u8, "len", cmd)) result = Command.Len
     else return error.UnknownCommand;
     return result;
 }
@@ -52,6 +54,7 @@ pub fn toSocketMessage(self: Command) []const u8 {
         .Reset => "reset",
         .Save => "save",
         .Load => "load",
+        .Len => "len",
     };
 }
 

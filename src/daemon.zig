@@ -246,6 +246,11 @@ fn handleCommand(
         .Help => {
             _ = try std.posix.write(conn_fd, HELP_MSG);
         },
+        .Len => {
+            const msg = try std.fmt.allocPrint(allocator, "{d}\n", .{tray.items.items.len});
+            defer allocator.free(msg);
+            _ = try std.posix.write(conn_fd, msg);
+        },
         .Reset => {
             try master.items.put("", master.latest);
             try master.updateTray(tray);
