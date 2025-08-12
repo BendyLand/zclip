@@ -22,9 +22,9 @@ A small CLI talks to the daemon over a UNIX domain socket so you can list, recal
  - On start, the daemon creates an invisible X11 window and registers for XFixes selection owner notifications on the CLIPBOARD atom.
  - When a new owner appears, it requests UTF8_STRING and stores the text if it’s new.
  - It also performs periodic polling as a fallback.
-   - This was also necessary to be able to push specific entries *back* to the system clipboard (xclip).
+    - This was also necessary to be able to push specific entries *back* to the system clipboard (xclip).
  - Items live in a MasterList (string → insertion index).
-   - A Tray view is derived by sorting keys by index for display.
+    - A Tray view is derived by sorting keys by index for display.
  - The CLI connects to /tmp/zclip.sock and sends plain-text commands (e.g., list, get 3).
  - `get` forks a short-lived helper that temporarily becomes the selection owner, serves the requestor, then exits.
 
@@ -35,15 +35,36 @@ A small CLI talks to the daemon over a UNIX domain socket so you can list, recal
  - dlopen/dlsym (libdl) and POSIX bits (poll, signals)
  - SQLite plus a Zig SQLite binding 
 
-> To easily install the requirement, run the following command (Ubuntu/Debian):
+> To easily install the requirement, run the following command (Debian/Ubuntu):
 ```bash
-    sudo apt install zig libx11-dev libxfixes-dev libdl-dev sqlite3 libsqlite3-dev
+sudo apt install zig libx11-dev libxfixes-dev libdl-dev sqlite3 libsqlite3-dev
 ```
 
 ### Zig dependency note
 
-This program expects a Zig-importable sqlite package.
-If you don't have that yet, add a dependency that exposes @import("sqlite") and make sure the build links against sqlite3.
+ - This program uses the vrischmann/zig-sqlite package, added via build.zig.zon and imported as @import("sqlite").
+
+```zig
+// build.zig.zon
+.dependencies = .{
+    .sqlite = .{
+        .url = "git+https://github.com/vrischmann/zig-sqlite#be8b4965b46fc1a7a819bf3cba09f370c0e9c64c",
+        .hash = "sqlite-3.48.0-F2R_a9GLDgAXT-c49TfkFMt6yPOMQAYfp4ig8bRNdZs4",
+    },
+},
+
+// build.zig
+const sqlite_dep = b.dependency("sqlite", .{
+    .target = target,
+    .optimize = optimize,
+});
+exe.root_module.addImport("sqlite", sqlite_dep.module("sqlite"));
+```
+
+ - Notes:
+    - You still need the system SQLite development files installed so the package can link against libsqlite3
+    - (Debian/Ubuntu): sudo apt install libsqlite3-dev
+
 ## Build & Run
 
 ```bash
@@ -65,7 +86,7 @@ zig build --release=safe
 ## Quick start
 
 ```bash
-# Show help (client-side help, no daemon needed; still works if daemon is running)
+# Show help (no daemon needed; will still work if daemon is running)
 zclip help
 
 # Start daemon (no args):
@@ -82,6 +103,8 @@ zclip get 3
 
 # Manually push via stdin (reads all stdin):
 echo -n "hello world" | zclip push
+# NOTE: This does *not* update your system clipboard. 
+# To actually be able to paste that text, you must run `zclip get 9999` (which gets the last item; assuming you don't actually have over 9999 items)
 
 # Save current set to sqlite:
 zclip save
@@ -130,7 +153,7 @@ zclip exit
  - The daemon likely crashed or exited uncleanly. Remove stale socket:
  - `rm -f /tmp/zclip.sock` then start the daemon again.
 
-No items captured
+No items saved
  - Ensure you’re actually on X11. Wayland native sessions won’t work.
  - Make sure libXfixes is available; without it you’ll rely on polling only.
  - Some apps set non-UTF8 clipboard formats; zclip requests UTF8_STRING.
