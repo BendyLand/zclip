@@ -1,7 +1,8 @@
-# zclip — a tiny X11 clipboard watcher & tray (Zig)
+# zclip 
 
 zclip is a lightweight clipboard daemon for Linux written in Zig.
-It sits in the background, watches the X11 clipboard, and automatically builds a de-duplicated list (“tray”) of recent clipboard entries. A small CLI talks to the daemon over a UNIX domain socket so you can list, recall, save/load to SQLite, or clear items without a full-blown GUI manager.
+It sits in the background, watches the X11 clipboard, and automatically builds a unique list of recent clipboard entries.
+A small CLI talks to the daemon over a UNIX domain socket so you can list, recall, save/load to SQLite, or clear items without an entire GUI manager.
 
 > X11 only. Wayland native clipboards aren’t supported.
 
@@ -21,16 +22,18 @@ It sits in the background, watches the X11 clipboard, and automatically builds a
  - On start, the daemon creates an invisible X11 window and registers for XFixes selection owner notifications on the CLIPBOARD atom.
  - When a new owner appears, it requests UTF8_STRING and stores the text if it’s new.
  - It also performs periodic polling as a fallback.
- - Items live in a MasterList (string → insertion index). A Tray view is derived by sorting keys by index for display.
+   - This was also necessary to be able to push specific entries *back* to the system clipboard (xclip).
+ - Items live in a MasterList (string → insertion index).
+   - A Tray view is derived by sorting keys by index for display.
  - The CLI connects to /tmp/zclip.sock and sends plain-text commands (e.g., list, get 3).
  - `get` forks a short-lived helper that temporarily becomes the selection owner, serves the requestor, then exits.
 
 ## Requirements
 
- -Zig (recent stable)
- -X11 headers & libraries: libX11, libXfixes
- -dlopen/dlsym (libdl) and POSIX bits (poll, signals)
- -SQLite plus a Zig SQLite binding (the code imports sqlite = @import("sqlite"))
+ - Zig (recent stable)
+ - X11 headers & libraries: libX11, libXfixes
+ - dlopen/dlsym (libdl) and POSIX bits (poll, signals)
+ - SQLite plus a Zig SQLite binding 
 
 > To easily install the requirement, run the following command (Ubuntu/Debian):
 ```bash
@@ -40,7 +43,7 @@ It sits in the background, watches the X11 clipboard, and automatically builds a
 ### Zig dependency note
 
 This program expects a Zig-importable sqlite package.
-If you haven’t wired that up yet, add a dependency that exposes @import("sqlite") and make sure the build links against sqlite3.
+If you don't have that yet, add a dependency that exposes @import("sqlite") and make sure the build links against sqlite3.
 ## Build & Run
 
 ```bash
@@ -54,7 +57,7 @@ zig build --release=safe
 ./zig-out/bin/zclip
 # It is recommended to move the binary to /usr/local/bin 
 # or add the binary's directory to your system $PATH.
-
+# That way you can simply run `zclip`. 
 # You may also alias it to something like `zc` for ease of use. 
 # (For the remainder of this README, I will use `zclip` as the working command.)
 ```
@@ -71,7 +74,7 @@ zclip
 # Copy something in your X11 session (Ctrl+C somewhere or run):
 echo "This is a test" | xclip -sel clip
 
-# List captured items:
+# List saved items:
 zclip list
 
 # Set clipboard to item 3 (and print it to stdout as a response):
@@ -86,7 +89,7 @@ zclip save
 # Load previously saved set from sqlite:
 zclip load
 
-# How many items in the tray?
+# Prints the number of saved items:
 zclip len
 
 # Clear all saved items (does not kill daemon):
@@ -137,11 +140,9 @@ Permission/SELinux/AppArmor issues
 
 ## Security & Privacy Notes
 
-    Clipboard contents are stored in memory and can be persisted to disk in plain text (/tmp/zclip.db).
-    If you copy secrets, be aware they may linger there.
-
-    /tmp is a shared directory; default file modes are governed by your umask.
-    Consider relocating the socket/DB to a private runtime dir for multi-user systems.
+ - Clipboard contents are stored in memory and can be persisted to disk in plain text (/tmp/zclip.db).
+ - If you copy secrets, be aware they may linger there.
+ - Consider relocating the socket/DB to a private runtime dir for multi-user systems.
 
 ## License
 
