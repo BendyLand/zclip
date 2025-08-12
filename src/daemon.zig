@@ -14,7 +14,11 @@ pub const HELP_MSG =
     \\  push <entry>     - Manually add an entry to the clipboard
     \\  get <number>     - Set your system clipboard to the contents of a saved entry
     \\                     (Tip: use `zclip list` to see entry numbers)
-    \\  list             - Show all currently saved entries
+    \\  list             - Print all currently saved entries
+    \\  len              - Print the number of saved entries
+    \\  save             - Save all currently saved entries to persistent storage
+    \\                     (stored in /tmp/zclip.db)
+    \\  load             - Load saved entries from persistent storage into memory
     \\  clear            - Remove all saved items from the list
     \\                     (Note: the current system clipboard becomes the new first entry)
     \\  reset            - Shortcut for: zclip push "" -> zclip get 10000 -> zclip clear
