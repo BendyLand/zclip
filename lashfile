@@ -1,9 +1,0 @@
-run:
-	zig build run
-
-build:
-	zig build -Doptimize=ReleaseSafe
-
-output:
-	zig build run > output 2>&1
-
