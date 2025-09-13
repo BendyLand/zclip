@@ -61,9 +61,9 @@ const sqlite_dep = b.dependency("sqlite", .{
 exe.root_module.addImport("sqlite", sqlite_dep.module("sqlite"));
 ```
 
- - Notes:
+ - **Notes:**
     - You still need the system SQLite development files installed so the package can link against libsqlite3
-    - (Debian/Ubuntu): sudo apt install libsqlite3-dev
+    - (Debian/Ubuntu): `sudo apt install libsqlite3-dev`
 
 ## Build & Run
 
