@@ -12,9 +12,10 @@ pub const HELP_MSG =
     \\
     \\Available commands:
     \\  push <entry>     - Manually add an entry to the clipboard
-    \\  get <number>     - Set your system clipboard to the contents of a saved entry
+    \\  get  <number>    - Set your system clipboard to the contents of a saved entry
     \\                     (Tip: use `zclip list` to see entry numbers)
-    \\  list             - Print all currently saved entries
+    \\  list [flag]      - Print all currently saved entries; including a flag will show full entries
+    \\                     (Valid flags: -v, --verbose, full, all)
     \\  len              - Print the number of saved entries
     \\  save             - Save all currently saved entries to persistent storage
     \\                     (stored in /tmp/zclip.db)
