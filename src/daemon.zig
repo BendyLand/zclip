@@ -204,8 +204,20 @@ fn handleCommand(
             try master.updateTray(tray);
             _ = try std.posix.write(conn_fd, "OK\n");
         },
-        .List => {
+        .List => |maybeVal| {
+            var showAll = false;
             var stream = std.io.fixedBufferStream(allocator.alloc(u8, 1024 * 1024 * 10) catch return); // temp buffer
+            _= try stream.writer().print("args: {?s}\n", .{maybeVal});
+            if (maybeVal) |val| {
+                const eql = std.mem.eql;
+                if (eql(u8, val, "-v") or
+                    eql(u8, val, "--verbose") or
+                    eql(u8, val, "full") or
+                    eql(u8, val, "all"))
+                {
+                    showAll = true;
+                }
+            }
             defer allocator.free(stream.buffer);
             // Items will be displayed starting from 1
             try master.updateTray(tray);
@@ -214,9 +226,10 @@ fn handleCommand(
                 var line_it = std.mem.splitScalar(u8, item, '\n');
                 var limited_lines = std.ArrayList([]const u8).init(allocator);
                 defer limited_lines.deinit();
+                const maxLines = 10;
                 var count: usize = 0;
                 while (line_it.next()) |line| : (count += 1) {
-                    if (count < 10) {
+                    if (count < maxLines) {
                         try limited_lines.append(line);
                     }
                     else {
@@ -225,12 +238,13 @@ fn handleCommand(
                 }
                 var total_lines = count; // includes the ones we’ve seen
                 while (line_it.next() != null) : (total_lines += 1) {} // count remaining
-                if (total_lines > 10) {
+                _ = try stream.writer().print("count: {d}, totalLines: {d}, showAll: {any}\n", .{count, total_lines, showAll});
+                if (total_lines > maxLines and !showAll) {
                     const head = try std.mem.join(allocator, "\n", limited_lines.items);
                     defer allocator.free(head);
                     try stream.writer().print(
                         "{d}: {s}\n({d} more lines...)\n",
-                        .{ i + 1, head, total_lines - 10 },
+                        .{ i + 1, head, total_lines - maxLines },
                     );
                 }
                 else {

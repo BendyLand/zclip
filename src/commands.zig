@@ -7,7 +7,7 @@ pub const INPUT_MAX: comptime_int = 1024;
 pub const Command = union(enum) {
     Get: usize,
     Push: []const u8,
-    List,
+    List: ?[]const u8,
     Clear,
     Exit,
     Reset,
@@ -31,7 +31,16 @@ pub fn parse(input: []const u8, allocator: std.mem.Allocator) !Command {
         const copied = try allocator.dupe(u8, rest);
         result = Command{ .Push = copied };
     }
-    else if (std.mem.eql(u8, "list", cmd)) result = Command.List
+    else if (std.mem.eql(u8, "list", cmd)) {
+        const rest = it.rest(); // everything after "list"
+        if (rest.len == 0) {
+            result = Command{ .List = null };
+        }
+        else {
+            const copied = try allocator.dupe(u8, rest);
+            result = Command{ .List = copied };
+        }
+    }
     else if (std.mem.eql(u8, "clear", cmd)) result = Command.Clear
     else if (std.mem.eql(u8, "exit", cmd)) result = Command.Exit
     else if (std.mem.eql(u8, "help", cmd)) result = Command.Help
@@ -45,9 +54,16 @@ pub fn parse(input: []const u8, allocator: std.mem.Allocator) !Command {
 
 pub fn toSocketMessage(self: Command) []const u8 {
     return switch (self) {
-        .Get => |i| std.fmt.allocPrintZ(std.heap.page_allocator, "get {d}", .{i}) catch "ERR",
-        .Push => |s| std.fmt.allocPrintZ(std.heap.page_allocator, "push {s}", .{s}) catch "ERR",
-        .List => "list",
+        .Get => |i| std.fmt.allocPrintZ(std.heap.page_allocator, "get {d}", .{i}) catch "GETERR",
+        .Push => |s| std.fmt.allocPrintZ(std.heap.page_allocator, "push {s}", .{s}) catch "PUSHERR",
+        .List => |ms| {
+            if (ms) |s| {
+                return std.fmt.allocPrintZ(std.heap.page_allocator, "list {s}", .{s}) catch "LISTERR1";
+            }
+            else {
+                return std.fmt.allocPrintZ(std.heap.page_allocator, "list", .{}) catch "LISTERR2";
+            }
+        },
         .Clear => "clear",
         .Exit => "exit",
         .Help => "help",
