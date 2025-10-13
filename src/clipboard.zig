@@ -100,7 +100,7 @@ pub const ClipboardContext = struct {
         const clipboard = c.XInternAtom(display, "CLIPBOARD", 0);
         const utf8 = c.XInternAtom(display, "UTF8_STRING", 0);
         const targets = c.XInternAtom(display, "TARGETS", 0);
-        _ = c.XInternAtom(display, "INCR", 0); // incr
+        _ = c.XInternAtom(display, "INCR", 0); 
         _ = c.XSetSelectionOwner(display, clipboard, window, c.CurrentTime);
         _ = c.XFlush(display);
         if (c.XGetSelectionOwner(display, clipboard) != window) {
@@ -176,7 +176,6 @@ pub const ClipboardContext = struct {
                 _ = c.XFlush(display);
             }
         }
-        // Optional: Free the text_copy if you ever exit the loop
     }
 };
 
