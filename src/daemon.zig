@@ -211,7 +211,31 @@ fn handleCommand(
             try master.updateTray(tray);
             var i: u8 = 0;
             for (tray.items.items) |item| {
-                try stream.writer().print("{d}: {s}\n", .{ i + 1, item });
+                var line_it = std.mem.splitScalar(u8, item, '\n');
+                var limited_lines = std.ArrayList([]const u8).init(allocator);
+                defer limited_lines.deinit();
+                var count: usize = 0;
+                while (line_it.next()) |line| : (count += 1) {
+                    if (count < 10) {
+                        try limited_lines.append(line);
+                    }
+                    else {
+                        break;
+                    }
+                }
+                var total_lines = count; // includes the ones we’ve seen
+                while (line_it.next() != null) : (total_lines += 1) {} // count remaining
+                if (total_lines > 10) {
+                    const head = try std.mem.join(allocator, "\n", limited_lines.items);
+                    defer allocator.free(head);
+                    try stream.writer().print(
+                        "{d}: {s}\n({d} more lines...)\n",
+                        .{ i + 1, head, total_lines - 10 },
+                    );
+                }
+                else {
+                    try stream.writer().print("{d}: {s}\n", .{ i + 1, item });
+                }
                 i += 1;
             }
             _ = try std.posix.write(conn_fd, stream.getWritten());
