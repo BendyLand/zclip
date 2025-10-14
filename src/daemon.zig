@@ -207,8 +207,6 @@ fn handleCommand(
         },
         .List => |maybeVal| {
             var showAll = false;
-            var stream = std.io.fixedBufferStream(allocator.alloc(u8, 1024 * 1024 * 10) catch return); // temp buffer
-            _= try stream.writer().print("args: {?s}\n", .{maybeVal});
             if (maybeVal) |val| {
                 const eql = std.mem.eql;
                 if (eql(u8, val, "-v") or
@@ -219,6 +217,8 @@ fn handleCommand(
                     showAll = true;
                 }
             }
+            const mb: usize = if (showAll) 100 else 10;
+            var stream = std.io.fixedBufferStream(allocator.alloc(u8, 1024 * 1024 * mb) catch return); // temp buffer
             defer allocator.free(stream.buffer);
             // Items will be displayed starting from 1
             try master.updateTray(tray);
@@ -239,7 +239,6 @@ fn handleCommand(
                 }
                 var total_lines = count; // includes the ones we’ve seen
                 while (line_it.next() != null) : (total_lines += 1) {} // count remaining
-                _ = try stream.writer().print("count: {d}, totalLines: {d}, showAll: {any}\n", .{count, total_lines, showAll});
                 if (total_lines > maxLines and !showAll) {
                     const head = try std.mem.join(allocator, "\n", limited_lines.items);
                     defer allocator.free(head);
