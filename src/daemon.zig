@@ -12,8 +12,10 @@ pub const HELP_MSG =
     \\
     \\Available commands:
     \\  push <entry>     - Manually add an entry to the clipboard
+    \\                     (Note: the system clipboard is *not* automatically updated when adding from a pipe.)
     \\  get  <number>    - Set your system clipboard to the contents of a saved entry
     \\                     (Tip: use `zclip list` to see entry numbers)
+    \\  last             - Alias for `zclip get 10000`; effectively gets most recently saved value.
     \\  list [flag]      - Print all currently saved entries; including a flag will show full entries
     \\                     (Valid flags: -v, --verbose, full, all)
     \\  len              - Print the number of saved entries
@@ -306,6 +308,9 @@ fn handleCommand(
             tray.*.items.items.len = 0;
             master.*.items.clearRetainingCapacity();
             master.*.latest = 0;
+        },
+        .Last => {
+            try handleCommand(cmd.Command{ .Get = 10000 }, master, tray, conn_fd, allocator);
         },
         .Save => {
             var db = try storage.DB.init();

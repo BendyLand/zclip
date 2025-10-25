@@ -15,6 +15,7 @@ pub const Command = union(enum) {
     Save,
     Load,
     Len,
+    Last,
 };
 
 pub fn parse(input: []const u8, allocator: std.mem.Allocator) !Command {
@@ -48,6 +49,8 @@ pub fn parse(input: []const u8, allocator: std.mem.Allocator) !Command {
     else if (std.mem.eql(u8, "save", cmd)) result = Command.Save
     else if (std.mem.eql(u8, "load", cmd)) result = Command.Load
     else if (std.mem.eql(u8, "len", cmd)) result = Command.Len
+    else if (std.mem.eql(u8, "last", cmd)) result = Command.Last
+    else if (std.mem.eql(u8, "head", cmd)) result = Command.Last
     else return error.UnknownCommand;
     return result;
 }
@@ -56,6 +59,7 @@ pub fn toSocketMessage(self: Command) []const u8 {
     return switch (self) {
         .Get => |i| std.fmt.allocPrintZ(std.heap.page_allocator, "get {d}", .{i}) catch "GETERR",
         .Push => |s| std.fmt.allocPrintZ(std.heap.page_allocator, "push {s}", .{s}) catch "PUSHERR",
+        .Last => std.fmt.allocPrintZ(std.heap.page_allocator, "get 10000", .{}) catch "LASTERR",
         .List => |ms| {
             if (ms) |s| {
                 return std.fmt.allocPrintZ(std.heap.page_allocator, "list {s}", .{s}) catch "LISTERR1";
