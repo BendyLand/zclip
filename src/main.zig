@@ -45,6 +45,10 @@ pub fn main() !void {
         daemon.sendCommandToDaemon(command) catch |err| {
             const writer = std.io.getStdErr().writer();
             if (err == error.FileNotFound) {
+                if (command == .On) {
+                    _ = try writer.write("false\n\n");
+                    return;
+                }
                 _ = try writer.write("Daemon not running. Please run `zclip` with no arguments to start it.\n");
             }
             else if (err == error.ConnectionRefused) {

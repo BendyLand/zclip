@@ -290,6 +290,9 @@ fn handleCommand(
         .Help => {
             _ = try std.posix.write(conn_fd, HELP_MSG);
         },
+        .On => {
+            _ = try std.posix.write(conn_fd, "true\n");
+        },
         .Len => {
             const msg = try std.fmt.allocPrint(allocator, "{d}\n", .{tray.items.items.len});
             defer allocator.free(msg);
