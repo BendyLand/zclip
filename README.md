@@ -123,11 +123,14 @@ zclip exit
 ```
 
 ## Command reference (client → daemon)
+
 `zclip...`
  - `push <text>` — Add an entry (client usually provides via stdin).
  - `get <n>`     — Set system clipboard to entry n (1-based; out-of-range clamps to ends).
- - `list`        — Print all items with 1-based indices.
+ - `last`        — Alias for `get 10000` (will effectively return the most recently saved item).
+ - `list`        — Print all items with 1-based indices (run `zclip help` to see flags).
  - `len`         — Print the number of tray items.
+ - `on`          — Prints whether the daemon is already running.
  - `clear`       — Remove all saved items from memory.
  - `save`        — Persist current set to /tmp/zclip.db.
  - `load`        — Load from /tmp/zclip.db (replaces in-memory set).
