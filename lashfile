@@ -1,0 +1,10 @@
+build:
+    zig build --release=safe
+    mv zig-out/bin/zclip .
+
+check:
+    ./check_session.sh   
+
+kill:
+    ./kill_session.sh
+
