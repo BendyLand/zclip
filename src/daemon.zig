@@ -19,6 +19,7 @@ pub const HELP_MSG =
     \\  list [flag]      - Print all currently saved entries; including a flag will show full entries
     \\                     (Valid flags: -v, --verbose, full, all)
     \\  len              - Print the number of saved entries
+    \\  on               - Prints whether or not the daemon is already running
     \\  save             - Save all currently saved entries to persistent storage
     \\                     (stored in /tmp/zclip.db)
     \\  load             - Load saved entries from persistent storage into memory
