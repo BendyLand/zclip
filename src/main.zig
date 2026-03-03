@@ -5,6 +5,13 @@ const Alloc = std.mem.Allocator;
 var pg_alloc = std.heap.page_allocator;
 
 pub fn main() !void {
+    // Use to check for leaks (be sure to comment out the call to daemonize)
+    // var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    // defer {
+    //     const result = gpa.deinit();
+    //     if (result == .leak) std.debug.print("LEAKS DETECTED\n", .{});
+    // }
+    // const allocator = gpa.allocator();
     const args = try std.process.argsAlloc(pg_alloc);
     defer std.process.argsFree(pg_alloc, args);
     if (args.len == 1) {
@@ -54,7 +61,7 @@ pub fn main() !void {
             else if (err == error.ConnectionRefused) {
                 _ = try writer.write("Daemon crashed at some point.\nPlease manually remove `/tmp/zclip.sock` to restore functionality.\nYou may also check `/tmp/zclip.log` to see what happened.\n");
             }
-            else std.debug.print("Unable to send command to daemon: {any}\n", .{err}); 
+            else std.debug.print("Unable to send command to daemon: {any}\n", .{err});
             std.posix.exit(1);
         };
     }
