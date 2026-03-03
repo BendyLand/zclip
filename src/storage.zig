@@ -12,9 +12,6 @@ pub const Tray = struct {
     }
 
     pub fn deinit(self: *Tray) void {
-        for (self.items.items) |item| {
-            self.items.allocator.free(item);
-        }
         self.items.deinit();
     }
 };
@@ -49,6 +46,10 @@ pub const MasterList = struct {
     }
 
     pub fn deinit(self: *MasterList) void {
+        var it = self.items.keyIterator();
+        while (it.next()) |key| {
+            self.allocator.free(key.*);
+        }
         self.items.deinit();
     }
 
@@ -70,6 +71,7 @@ pub const MasterList = struct {
             i += 1;
         }
         // Sort entries by insertion index
+        tray.items.deinit();
         tray.items = try sortKeysByValue(self.*.allocator, self.items);
     }
 
