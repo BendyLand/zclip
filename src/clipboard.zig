@@ -86,10 +86,12 @@ pub const ClipboardContext = struct {
         // Make a copy into Zig-managed memory
         const temp = try allocator.alloc(u8, slice.len);
         std.mem.copyForwards(u8, temp, slice);
-        const copied = std.mem.trimEnd(u8, temp, "\n");
+        const trimmed = std.mem.trimEnd(u8, temp, "\n");
+        const result = try allocator.dupe(u8, trimmed);
+        allocator.free(temp);
         // Free the X11-allocated memory
         _ = c.XFree(prop);
-        return copied;
+        return result;
     }
 
     pub fn setClipboard(self: *ClipboardContext, text: []const u8) !void {
@@ -100,7 +102,7 @@ pub const ClipboardContext = struct {
         const clipboard = c.XInternAtom(display, "CLIPBOARD", 0);
         const utf8 = c.XInternAtom(display, "UTF8_STRING", 0);
         const targets = c.XInternAtom(display, "TARGETS", 0);
-        _ = c.XInternAtom(display, "INCR", 0); 
+        _ = c.XInternAtom(display, "INCR", 0);
         _ = c.XSetSelectionOwner(display, clipboard, window, c.CurrentTime);
         _ = c.XFlush(display);
         if (c.XGetSelectionOwner(display, clipboard) != window) {

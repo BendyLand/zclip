@@ -119,6 +119,7 @@ pub fn runDaemon(allocator: std.mem.Allocator) !void {
                         last_clip_owner = current_owner;
                         const polled = clipboard.captureClipboard(&allocator) catch null;
                         if (polled) |text| {
+                            defer allocator.free(text);
                             if (!master.items.contains(text)) {
                                 try master.add(text);
                                 try master.updateTray(&tray);
@@ -131,6 +132,7 @@ pub fn runDaemon(allocator: std.mem.Allocator) !void {
         if (now.since(last_poll) >= std.time.ns_per_s) {
             last_poll = now;
             const polled = clipboard.captureClipboard(&allocator) catch null;
+            defer if (polled) |text| allocator.free(text);
             if (polled) |text| {
                 if (!master.items.contains(text)) {
                     try master.add(text);
@@ -146,6 +148,7 @@ pub fn runDaemon(allocator: std.mem.Allocator) !void {
                 last_clip_owner = current_owner;
                 const maybe_text = clipboard.captureClipboard(&allocator) catch null;
                 if (maybe_text) |text| {
+                    defer allocator.free(text);
                     if (!master.items.contains(text)) {
                         try master.add(text);
                         try master.updateTray(&tray);
@@ -205,6 +208,7 @@ fn handleCommand(
     switch (command) {
         .Push => |val| {
             try master.add(val);
+            master.*.allocator.free(val);
             try master.updateTray(tray);
             _ = try std.posix.write(conn_fd, "OK\n");
         },
@@ -278,6 +282,10 @@ fn handleCommand(
         },
         .Clear => {
             tray.*.items.items.len = 0;
+            var it = master.*.items.iterator();
+            while (it.next()) |item| {
+                master.*.allocator.free(item.key_ptr.*);
+            }
             master.*.items.clearRetainingCapacity();
             master.*.latest = 0;
             _ = try std.posix.write(conn_fd, "OK Cleared\n");
@@ -286,7 +294,8 @@ fn handleCommand(
             _ = try std.posix.write(conn_fd, "Goodbye\n");
             try fs.cwd().deleteFile("/tmp/zclip.sock");
             std.debug.print("Shutting down zclip daemon\n", .{});
-            std.posix.exit(0); // or break the loop
+            return error.Exit;
+            // std.posix.exit(0);
         },
         .Help => {
             _ = try std.posix.write(conn_fd, HELP_MSG);
