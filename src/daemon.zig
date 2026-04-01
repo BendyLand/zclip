@@ -1,5 +1,6 @@
 const std = @import("std");
 const cb = @import("clipboard.zig");
+const wl = @import("wayland.zig");
 const storage = @import("storage.zig");
 const cmd = @import("commands.zig");
 const os = std.os;
@@ -50,10 +51,16 @@ fn makeSockAddrUn(path: []const u8) sockaddr_un {
     return addr;
 }
 
-pub fn runDaemon(allocator: std.mem.Allocator) !void {
+pub fn runDaemon(allocator: std.mem.Allocator, use_wayland: bool) !void {
     _ = cb.c.signal(cb.c.SIGCHLD, handle_sigchld);
-    var clipboard = try cb.ClipboardContext.init();
-    defer clipboard.deinit();
+    // Initialise whichever backend we need.
+    var clipboard: ?cb.ClipboardContext = if (!use_wayland) try cb.ClipboardContext.init() else null;
+    defer if (clipboard) |*ctx| ctx.deinit();
+    var watcher: ?std.process.Child = if (use_wayland) try wl.spawnWatcher(allocator) else null;
+    defer if (watcher) |*w| {
+        _ = w.kill() catch {};
+        _ = w.wait() catch {};
+    };
     var tray = storage.Tray.init(allocator);
     defer tray.deinit();
     var master = storage.MasterList.init(allocator);
@@ -66,36 +73,47 @@ pub fn runDaemon(allocator: std.mem.Allocator) !void {
     const sockaddr_len = @as(std.posix.socklen_t, @intCast(@sizeOf(sockaddr_un)));
     try std.posix.bind(listener_fd, sockaddr_ptr, sockaddr_len);
     try std.posix.listen(listener_fd, 10);
-    std.debug.print("Daemon listening on {s}\n", .{socket_path});
-    // Set up XFixes
+    std.debug.print("Daemon listening on {s} (backend: {s})\n", .{
+        socket_path,
+        if (use_wayland) "wayland" else "x11",
+    });
+    // X11-only: set up XFixes selection-change notifications.
     var xfixes_event_base: c_int = 0;
     var xfixes_error_base: c_int = 0;
-    if (cb.c.XFixesQueryExtension(clipboard.display, &xfixes_event_base, &xfixes_error_base) == 0) {
-        return error.XFixesNotAvailable;
+    var clipboard_atom: cb.c.Atom = 0;
+    var last_clip_owner: cb.c.Window = 0;
+    var last_poll = try std.time.Instant.now();
+    const poll_interval_ns = std.time.ns_per_s;
+
+    if (!use_wayland) {
+        if (cb.c.XFixesQueryExtension(clipboard.?.display, &xfixes_event_base, &xfixes_error_base) == 0) {
+            return error.XFixesNotAvailable;
+        }
+        clipboard_atom = cb.c.XInternAtom(clipboard.?.display, "CLIPBOARD", 0);
+        cb.c.XFixesSelectSelectionInput(
+            clipboard.?.display,
+            clipboard.?.window,
+            clipboard_atom,
+            cb.c.XFixesSetSelectionOwnerNotifyMask,
+        );
     }
-    // Register for clipboard selection change notifications
-    const clipboard_atom = cb.c.XInternAtom(clipboard.display, "CLIPBOARD", 0);
-    cb.c.XFixesSelectSelectionInput(
-        clipboard.display,
-        clipboard.window, // invisible window that owns the clipboard selection
-        clipboard_atom,
-        cb.c.XFixesSetSelectionOwnerNotifyMask,
-    );
+    // fd[0] is the X11 display connection (X11) or the wl-paste --watch pipe (Wayland).
+    const monitor_fd: i32 = if (use_wayland)
+        @intCast(watcher.?.stdout.?.handle)
+    else
+        cb.c.XConnectionNumber(clipboard.?.display);
     var conn_buf: [1024 * 1024]u8 = undefined;
     const POLLIN = 0x001;
     const PollFd = cb.c.struct_pollfd;
     var poll_fds: [2]PollFd = .{
-        .{ .fd = cb.c.XConnectionNumber(clipboard.display), .events = POLLIN, .revents = 0 },
+        .{ .fd = monitor_fd, .events = POLLIN, .revents = 0 },
         .{ .fd = listener_fd, .events = POLLIN, .revents = 0 },
     };
-    var last_clip_owner: cb.c.Window = 0;
-    const poll_interval_ns = std.time.ns_per_s; // Poll every 1 second
-    var last_poll = try std.time.Instant.now();
-    const EINTR = 4; // POSIX standard: Interrupted system call
+    const EINTR = 4;
     while (true) {
         const ready = blk: {
             while (true) {
-                const rc = cb.c.poll(&poll_fds, poll_fds.len, 100); // small timeout
+                const rc = cb.c.poll(&poll_fds, poll_fds.len, 100);
                 if (rc >= 0) break :blk rc;
                 const errno = std.posix.errno(rc);
                 if (@intFromEnum(errno) == EINTR) {
@@ -108,55 +126,78 @@ pub fn runDaemon(allocator: std.mem.Allocator) !void {
         };
         if (ready <= 0) continue;
         const now = try std.time.Instant.now();
-        // Handle clipboard change via XFixes event
+        // handle monitor fd events.
         if (poll_fds[0].revents & POLLIN != 0) {
-            var event: cb.c.XEvent = undefined;
-            while (cb.c.XPending(clipboard.display) > 0) {
-                _ = cb.c.XNextEvent(clipboard.display, &event);
-                if (event.type == xfixes_event_base + cb.c.XFixesSelectionNotify) {
-                    const current_owner = cb.c.XGetSelectionOwner(clipboard.display, clipboard_atom);
-                    if (current_owner != last_clip_owner and current_owner != 0) {
-                        last_clip_owner = current_owner;
-                        const polled = clipboard.captureClipboard(&allocator) catch null;
-                        if (polled) |text| {
-                            defer allocator.free(text);
-                            if (!master.items.contains(text)) {
-                                try master.add(text);
-                                try master.updateTray(&tray);
+            if (use_wayland) {
+                // read clipboard entries from the wl-paste --watch pipe.
+                // each entry is terminated by a null byte (see wayland.zig).
+                var wl_buf: [4 * 1024 * 1024]u8 = undefined;
+                const n = std.posix.read(monitor_fd, &wl_buf) catch 0;
+                if (n == 0) {
+                    std.debug.print("wl-paste watcher exited, shutting down daemon\n", .{});
+                    return;
+                }
+                var it = std.mem.splitScalar(u8, wl_buf[0..n], 0);
+                while (it.next()) |chunk| {
+                    const text = std.mem.trimRight(u8, chunk, "\n");
+                    if (text.len > 0 and !master.items.contains(text)) {
+                        try master.add(text);
+                        try master.updateTray(&tray);
+                    }
+                }
+            }
+            else {
+                // x11: process XFixes selection-owner-change events.
+                var event: cb.c.XEvent = undefined;
+                while (cb.c.XPending(clipboard.?.display) > 0) {
+                    _ = cb.c.XNextEvent(clipboard.?.display, &event);
+                    if (event.type == xfixes_event_base + cb.c.XFixesSelectionNotify) {
+                        const current_owner = cb.c.XGetSelectionOwner(clipboard.?.display, clipboard_atom);
+                        if (current_owner != last_clip_owner and current_owner != 0) {
+                            last_clip_owner = current_owner;
+                            const polled = clipboard.?.captureClipboard(&allocator) catch null;
+                            if (polled) |text| {
+                                defer allocator.free(text);
+                                if (!master.items.contains(text)) {
+                                    try master.add(text);
+                                    try master.updateTray(&tray);
+                                }
                             }
                         }
                     }
                 }
             }
         }
-        if (now.since(last_poll) >= std.time.ns_per_s) {
-            last_poll = now;
-            const polled = clipboard.captureClipboard(&allocator) catch null;
-            defer if (polled) |text| allocator.free(text);
-            if (polled) |text| {
-                if (!master.items.contains(text)) {
-                    try master.add(text);
-                    try master.updateTray(&tray);
-                }
-            }
-        }
-        // Fallback polling every N seconds
-        if (now.since(last_poll) >= poll_interval_ns) {
-            last_poll = now;
-            const current_owner = cb.c.XGetSelectionOwner(clipboard.display, clipboard_atom);
-            if (current_owner != 0 and current_owner != last_clip_owner) {
-                last_clip_owner = current_owner;
-                const maybe_text = clipboard.captureClipboard(&allocator) catch null;
-                if (maybe_text) |text| {
-                    defer allocator.free(text);
+        // x11-only fallback polling.
+        if (!use_wayland) {
+            if (now.since(last_poll) >= std.time.ns_per_s) {
+                last_poll = now;
+                const polled = clipboard.?.captureClipboard(&allocator) catch null;
+                defer if (polled) |text| allocator.free(text);
+                if (polled) |text| {
                     if (!master.items.contains(text)) {
                         try master.add(text);
                         try master.updateTray(&tray);
                     }
                 }
             }
+            if (now.since(last_poll) >= poll_interval_ns) {
+                last_poll = now;
+                const current_owner = cb.c.XGetSelectionOwner(clipboard.?.display, clipboard_atom);
+                if (current_owner != 0 and current_owner != last_clip_owner) {
+                    last_clip_owner = current_owner;
+                    const maybe_text = clipboard.?.captureClipboard(&allocator) catch null;
+                    if (maybe_text) |text| {
+                        defer allocator.free(text);
+                        if (!master.items.contains(text)) {
+                            try master.add(text);
+                            try master.updateTray(&tray);
+                        }
+                    }
+                }
+            }
         }
-        // Handle socket commands
+        // handle socket commands (same for both backends).
         if (poll_fds[1].revents & POLLIN != 0) {
             const conn_fd = std.posix.accept(listener_fd, null, null, std.posix.SOCK.NONBLOCK) catch null;
             if (conn_fd) |fd| {
@@ -167,23 +208,23 @@ pub fn runDaemon(allocator: std.mem.Allocator) !void {
                     _ = try std.posix.write(fd, "ERR Invalid Command\n");
                     continue;
                 };
-                try handleCommand(command, &master, &tray, fd, allocator);
+                try handleCommand(command, &master, &tray, fd, allocator, use_wayland);
             }
         }
     }
 }
 
 pub fn daemonize(log_path: []const u8, redirect_stdout: bool) !void {
-    // First fork
+    // first fork
     const fork_result = try std.posix.fork();
     if (fork_result < 0) return error.ForkFailed;
     if (fork_result > 0) std.posix.exit(0); // Parent exits
-    // Start new session
+    // start new session
     _ = std.os.linux.setsid();
-    // Optional second fork (for double-fork daemonization)
+    // optional second fork (for double-fork daemonization)
     // const fork_result2 = try std.posix.fork();
-    // if (fork_result2 > 0) std.posix.exit(0); // Optional double-fork
-    // Redirect stdio to a log file
+    // if (fork_result2 > 0) std.posix.exit(0); // optional double-fork
+    // redirect stdio to a log file
     const file = try std.fs.cwd().createFile(log_path, .{
         .truncate = true,
         .read = true,
@@ -194,7 +235,7 @@ pub fn daemonize(log_path: []const u8, redirect_stdout: bool) !void {
     if (redirect_stdout) {
         try std.posix.dup2(fd, std.io.getStdOut().handle);
     }
-    // Optionally: chdir to root to avoid blocking filesystem unmounts
+    // optionally: chdir to root to avoid blocking filesystem unmounts
     try std.posix.chdir("/");
 }
 
@@ -204,6 +245,7 @@ fn handleCommand(
     tray: *storage.Tray,
     conn_fd: std.posix.fd_t,
     allocator: std.mem.Allocator,
+    use_wayland: bool,
 ) !void {
     switch (command) {
         .Push => |val| {
@@ -227,7 +269,7 @@ fn handleCommand(
             const mb: usize = if (showAll) 100 else 10;
             var stream = std.io.fixedBufferStream(allocator.alloc(u8, 1024 * 1024 * mb) catch return); // temp buffer
             defer allocator.free(stream.buffer);
-            // Items will be displayed starting from 1
+            // items will be displayed starting from 1
             try master.updateTray(tray);
             var i: u8 = 0;
             for (tray.items.items) |item| {
@@ -266,18 +308,25 @@ fn handleCommand(
             if (idx <= 0) index = 1 else if (idx >= tray.items.items.len) index = tray.items.items.len;
             index -= 1;
             const val = tray.items.items[index];
-            // Write response *before* forking
             _ = try std.posix.write(conn_fd, val);
             _ = try std.posix.write(conn_fd, "\n");
-            // Fork and daemonize
-            if (try std.posix.fork() == 0) {
-                // In child
-                std.posix.close(conn_fd);
-                try daemonize("/tmp/zclip-set.log", false);
-                var cb2 = try cb.ClipboardContext.init();
-                defer cb2.deinit();
-                try cb.ClipboardContext.setClipboard(&cb2, val);
-                std.posix.exit(0);
+            if (use_wayland) {
+                // wl-copy keeps the selection alive in the background;
+                // our SIGCHLD handler reaps it when another app takes over.
+                wl.setClipboard(allocator, val) catch |err| {
+                    std.debug.print("wl-copy failed: {any}\n", .{err});
+                };
+            }
+            else {
+                // fork a child that temporarily owns the X11 selection.
+                if (try std.posix.fork() == 0) {
+                    std.posix.close(conn_fd);
+                    try daemonize("/tmp/zclip-set.log", false);
+                    var cb2 = try cb.ClipboardContext.init();
+                    defer cb2.deinit();
+                    try cb.ClipboardContext.setClipboard(&cb2, val);
+                    std.posix.exit(0);
+                }
             }
         },
         .Clear => {
@@ -317,13 +366,13 @@ fn handleCommand(
             }
             // .Get = 10000 will wrap to the last valid index in the current list
             // (unless someone manages to fit 10000 unique items in their list without an OOM error)
-            try handleCommand(cmd.Command{ .Get = 10000 }, master, tray, conn_fd, allocator);
+            try handleCommand(cmd.Command{ .Get = 10000 }, master, tray, conn_fd, allocator, use_wayland);
             tray.*.items.items.len = 0;
             master.*.items.clearRetainingCapacity();
             master.*.latest = 0;
         },
         .Last => {
-            try handleCommand(cmd.Command{ .Get = 10000 }, master, tray, conn_fd, allocator);
+            try handleCommand(cmd.Command{ .Get = 10000 }, master, tray, conn_fd, allocator, use_wayland);
         },
         .Save => {
             var db = try storage.DB.init();
@@ -353,7 +402,7 @@ pub fn safeToStartDaemon() !bool {
     }
     else |err| {
         if (err != error.FileNotFound) return false;
-        // It's safe to proceed — no existing socket
+        // it's safe to proceed — no existing socket
         return true;
     }
     return false;
@@ -361,19 +410,19 @@ pub fn safeToStartDaemon() !bool {
 
 pub fn sendCommandToDaemon(command: cmd.Command) !void {
     const socket_path = "/tmp/zclip.sock";
-    // Create socket
+    // create socket
     const fd = try std.posix.socket(std.posix.AF.UNIX, std.posix.SOCK.STREAM, 0);
     defer std.posix.close(fd);
-    // Prepare address
+    // prepare address
     const sockaddr = makeSockAddrUn(socket_path);
     const sockaddr_ptr = @as(*const std.posix.sockaddr, @ptrCast(&sockaddr));
     const sockaddr_len = @as(std.posix.socklen_t, @intCast(@sizeOf(sockaddr_un)));
-    // Connect to daemon
+    // connect to daemon
     try std.posix.connect(fd, sockaddr_ptr, sockaddr_len);
-    // Send command
+    // send command
     const msg = cmd.toSocketMessage(command);
     _ = try std.posix.write(fd, msg);
-    // Optionally: read a response
+    // optionally: read a response
     var buf: [1024 * 1024]u8 = undefined;
     const n = try std.posix.read(fd, &buf);
     const response = buf[0..n];
@@ -381,7 +430,7 @@ pub fn sendCommandToDaemon(command: cmd.Command) !void {
 }
 
 fn handle_sigchld(_: c_int) callconv(.C) void {
-    // Loop to reap all dead children
+    // loop to reap all dead children
     while (true) {
         const pid = std.c.waitpid(-1, null, std.c.W.NOHANG);
         if (pid <= 0) break;
