@@ -35,6 +35,21 @@ pub fn main() !void {
             value = @constCast(std.mem.trimRight(u8, value, " \n"));
             command = cmd.Command{ .Push = value };
         }
+        else if (std.mem.eql(u8, arg, "pipe")) {
+            // No argument? Try to read from stdin
+            var stdin_reader = std.io.getStdIn().reader();
+            var value = try stdin_reader.readAllAlloc(pg_alloc, 1024 * 1024);
+            value = @constCast(std.mem.trimRight(u8, value, " \n"));
+            daemon.sendCommandToDaemon(.{ .Push = value }) catch |err| {
+                std.debug.print("Unable to send `push` command to daemon: {any}\n", .{err});
+                std.posix.exit(1);
+            };
+            daemon.sendCommandToDaemon(.Last) catch |err| {
+                std.debug.print("Unable to send `last` command to daemon: {any}\n", .{err});
+                std.posix.exit(1);
+            };
+            return;
+        }
         else if (std.mem.eql(u8, arg, "help")) {
             std.debug.print(daemon.HELP_MSG ++ "\n", .{});
             return;
