@@ -14,18 +14,28 @@ pub fn main() !void {
     // const allocator = gpa.allocator();
     const args = try std.process.argsAlloc(pg_alloc);
     defer std.process.argsFree(pg_alloc, args);
-    if (args.len == 1) {
+    // auto-detect Wayland from the environment; override with --wayland / --x11.
+    var use_wayland = std.posix.getenv("WAYLAND_DISPLAY") != null;
+    const is_daemon_mode = blk: {
+        if (args.len == 1) break :blk true;
+        if (args.len == 2) {
+            if (std.mem.eql(u8, args[1], "--wayland")) { use_wayland = true;  break :blk true; }
+            if (std.mem.eql(u8, args[1], "--x11"))     { use_wayland = false; break :blk true; }
+        }
+        break :blk false;
+    };
+    if (is_daemon_mode) {
         if (try daemon.safeToStartDaemon()) {
-            // No args → run in daemon mode
+            // No args (or backend flag only) -> run in daemon mode
             daemon.daemonize("/tmp/zclip.log", true) catch |err| {
                 std.debug.print("Failed to daemonize: {any}\n", .{err});
                 return;
             };
-            try daemon.runDaemon(pg_alloc);
+            try daemon.runDaemon(pg_alloc, use_wayland);
         }
     }
     else {
-        // Args given → run in sender mode
+        // Args given -> run in sender mode
         const arg = try std.mem.join(pg_alloc, " ", args[1..]);
         var command: cmd.Command = undefined;
         if (std.mem.eql(u8, arg, "push")) {
