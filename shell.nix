@@ -15,4 +15,3 @@ pkgs.mkShell {
     echo "--- zclip development environment (Zig 0.14.1) ---"
   '';
 }
-

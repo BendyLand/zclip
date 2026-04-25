@@ -3,4 +3,5 @@ summary*
 leaks*
 .zig-cache/*
 zig-out/*
+zclip
 

@@ -84,7 +84,7 @@ pub const ClipboardContext = struct {
         // Make a copy into Zig-managed memory
         const temp = try allocator.alloc(u8, slice.len);
         std.mem.copyForwards(u8, temp, slice);
-        const trimmed = std.mem.trimEnd(u8, temp, "\n");
+        const trimmed = std.mem.trimRight(u8, temp, "\n");
         const result = try allocator.dupe(u8, trimmed);
         allocator.free(temp);
         // Free the X11-allocated memory

@@ -12,24 +12,26 @@ pub const HELP_MSG =
     \\Once running, it continuously monitors the system clipboard and tracks new entries automatically.
     \\
     \\Available commands:
-    \\  push <entry>     - Manually add an entry to the clipboard
+    \\  push <entry>     - Manually add an entry to the clipboard.
     \\                     (Note: the system clipboard is *not* automatically updated when adding from a pipe.)
-    \\  get  <number>    - Set your system clipboard to the contents of a saved entry
-    \\                     (Tip: use `zclip list` to see entry numbers)
+    \\  pipe             - Like `push`, but specifically for use in a pipe; automatically updates the system clipboard.
+    \\                     (Note: `zclip pipe <entry>` will not work; it is *only* for use in pipes.)
+    \\  get  <number>    - Set your system clipboard to the contents of a saved entry.
+    \\                     (Tip: use `zclip list` to see entry numbers.)
     \\  last             - Alias for `zclip get 10000`; effectively gets most recently saved value.
-    \\  list [flag]      - Print all currently saved entries; including a flag will show full entries
-    \\                     (Valid flags: -v, --verbose, full, all)
-    \\  len              - Print the number of saved entries
-    \\  on               - Prints whether or not the daemon is already running
-    \\  save             - Save all currently saved entries to persistent storage
+    \\  list [flag]      - Print all currently saved entries; including a flag will show full entries.
+    \\                     (Valid flags: -v, --verbose, full, all.)
+    \\  len              - Print the number of saved entries.
+    \\  on               - Prints whether or not the daemon is already running.
+    \\  save             - Save all currently saved entries to persistent storage.
     \\                     (stored in /tmp/zclip.db)
-    \\  load             - Load saved entries from persistent storage into memory
-    \\  clear            - Remove all saved items from the list
-    \\                     (Note: the current system clipboard becomes the new first entry)
-    \\  reset            - Shortcut for: zclip push "" -> zclip get 10000 -> zclip clear
-    \\                     (Effectively empties both clipboard *and* saved list)
-    \\  help             - Print this help menu
-    \\  exit             - Shut down the daemon and wipe all saved entries
+    \\  load             - Load saved entries from persistent storage into memory.
+    \\  clear            - Remove all saved items from the list.
+    \\                     (Note: the current system clipboard becomes the new first entry.)
+    \\  reset            - Shortcut for: zclip push "" -> zclip get 10000 -> zclip clear.
+    \\                     (Effectively empties both clipboard *and* saved list.)
+    \\  help             - Print this help menu.
+    \\  exit             - Shut down the daemon and wipe all saved entries.
     \\
     \\Troubleshooting:
     \\  If commands fail, the daemon may have crashed or exited uncleanly.
@@ -217,7 +219,7 @@ pub fn runDaemon(allocator: std.mem.Allocator, use_wayland: bool) !void {
         }
         // handle socket commands (same for both backends).
         if (poll_fds[1].revents & POLLIN != 0) {
-            const conn_fd = std.posix.accept(listener_fd, null, null, std.posix.SOCK.NONBLOCK) catch null;
+            const conn_fd = std.posix.accept(listener_fd, null, null, 0) catch null;
             if (conn_fd) |fd| {
                 defer std.posix.close(fd);
                 const bytes_read = try std.posix.read(fd, &conn_buf);
@@ -350,6 +352,9 @@ fn handleCommand(
                     std.posix.exit(0);
                 }
             }
+        },
+        .Pipe => {
+            // NOOP when handled here; the logic lives in main
         },
         .Clear => {
             tray.*.items.items.len = 0;
