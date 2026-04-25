@@ -5,7 +5,7 @@ const std = @import("std");
 /// Caller is responsible for killing/waiting the child on shutdown.
 pub fn spawnWatcher(allocator: std.mem.Allocator) !std.process.Child {
     var child = std.process.Child.init(
-        &.{ "wl-paste", "--watch", "sh", "-c", "cat; printf '\\x00'" },
+        &.{ "wl-paste", "--watch", "sh", "-c", "cat; printf '\\000'" },
         allocator,
     );
     child.stdout_behavior = .Pipe;
@@ -14,10 +14,10 @@ pub fn spawnWatcher(allocator: std.mem.Allocator) !std.process.Child {
     return child;
 }
 
-/// Set clipboard content using wl-copy. Spawns wl-copy in the background so
-/// it can keep serving the Wayland selection until another app takes over.
-/// The existing SIGCHLD handler in daemon.zig will reap it when it exits.
-pub fn setClipboard(allocator: std.mem.Allocator, text: []const u8) !void {
+/// Spawn wl-copy with the given text and return the child handle.
+/// Caller appends it to wl_copies in daemon.zig so it is killed on shutdown;
+/// the SIGCHLD handler reaps it early when another app takes the selection.
+pub fn setClipboard(allocator: std.mem.Allocator, text: []const u8) !std.process.Child {
     var child = std.process.Child.init(&.{"wl-copy"}, allocator);
     child.stdin_behavior = .Pipe;
     child.stdout_behavior = .Ignore;
@@ -28,5 +28,5 @@ pub fn setClipboard(allocator: std.mem.Allocator, text: []const u8) !void {
         stdin.close();
         child.stdin = null;
     }
-    // do not wait — wl-copy must stay alive to serve the selection.
+    return child;
 }

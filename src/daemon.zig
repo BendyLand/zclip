@@ -109,6 +109,20 @@ pub fn runDaemon(allocator: std.mem.Allocator, use_wayland: bool) !void {
         .{ .fd = monitor_fd, .events = POLLIN, .revents = 0 },
         .{ .fd = listener_fd, .events = POLLIN, .revents = 0 },
     };
+    // persistent accumulation buffer for Wayland pipe reads;
+    // avoids partial-read splits when a single clipboard entry
+    //   spans multiple read() calls.
+    var wl_accum = std.ArrayList(u8).init(allocator);
+    defer wl_accum.deinit();
+    // track spawned wl-copy children so they can be killed on daemon shutdown.
+    var wl_copies = std.ArrayList(std.process.Child).init(allocator);
+    defer {
+        for (wl_copies.items) |*child| {
+            _ = child.kill() catch {};
+            _ = child.wait() catch {};
+        }
+        wl_copies.deinit();
+    }
     const EINTR = 4;
     while (true) {
         const ready = blk: {
@@ -129,21 +143,25 @@ pub fn runDaemon(allocator: std.mem.Allocator, use_wayland: bool) !void {
         // handle monitor fd events.
         if (poll_fds[0].revents & POLLIN != 0) {
             if (use_wayland) {
-                // read clipboard entries from the wl-paste --watch pipe.
-                // each entry is terminated by a null byte (see wayland.zig).
-                var wl_buf: [4 * 1024 * 1024]u8 = undefined;
-                const n = std.posix.read(monitor_fd, &wl_buf) catch 0;
+                var read_buf: [64 * 1024]u8 = undefined;
+                const n = std.posix.read(monitor_fd, &read_buf) catch 0;
                 if (n == 0) {
                     std.debug.print("wl-paste watcher exited, shutting down daemon\n", .{});
                     return;
                 }
-                var it = std.mem.splitScalar(u8, wl_buf[0..n], 0);
-                while (it.next()) |chunk| {
+                try wl_accum.appendSlice(read_buf[0..n]);
+                // process every null-terminated message that has fully arrived.
+                while (std.mem.indexOfScalar(u8, wl_accum.items, 0)) |null_pos| {
+                    const chunk = wl_accum.items[0..null_pos];
                     const text = std.mem.trimRight(u8, chunk, "\n");
                     if (text.len > 0 and !master.items.contains(text)) {
                         try master.add(text);
                         try master.updateTray(&tray);
                     }
+                    const consumed = null_pos + 1;
+                    const leftover = wl_accum.items[consumed..];
+                    std.mem.copyForwards(u8, wl_accum.items[0..leftover.len], leftover);
+                    wl_accum.shrinkRetainingCapacity(leftover.len);
                 }
             }
             else {
@@ -208,7 +226,7 @@ pub fn runDaemon(allocator: std.mem.Allocator, use_wayland: bool) !void {
                     _ = try std.posix.write(fd, "ERR Invalid Command\n");
                     continue;
                 };
-                try handleCommand(command, &master, &tray, fd, allocator, use_wayland);
+                try handleCommand(command, &master, &tray, fd, allocator, use_wayland, &wl_copies);
             }
         }
     }
@@ -246,6 +264,7 @@ fn handleCommand(
     conn_fd: std.posix.fd_t,
     allocator: std.mem.Allocator,
     use_wayland: bool,
+    wl_copies: *std.ArrayList(std.process.Child),
 ) !void {
     switch (command) {
         .Push => |val| {
@@ -311,11 +330,14 @@ fn handleCommand(
             _ = try std.posix.write(conn_fd, val);
             _ = try std.posix.write(conn_fd, "\n");
             if (use_wayland) {
-                // wl-copy keeps the selection alive in the background;
-                // our SIGCHLD handler reaps it when another app takes over.
-                wl.setClipboard(allocator, val) catch |err| {
+                const copy_child = wl.setClipboard(allocator, val) catch |err| {
                     std.debug.print("wl-copy failed: {any}\n", .{err});
+                    return;
                 };
+                // track the child so it is killed on daemon shutdown;
+                // the SIGCHLD handler reaps it early when another app
+                //   takes the selection.
+                wl_copies.append(copy_child) catch {};
             }
             else {
                 // fork a child that temporarily owns the X11 selection.
@@ -344,7 +366,6 @@ fn handleCommand(
             try fs.cwd().deleteFile("/tmp/zclip.sock");
             std.debug.print("Shutting down zclip daemon\n", .{});
             return error.Exit;
-            // std.posix.exit(0);
         },
         .Help => {
             _ = try std.posix.write(conn_fd, HELP_MSG);
@@ -366,13 +387,13 @@ fn handleCommand(
             }
             // .Get = 10000 will wrap to the last valid index in the current list
             // (unless someone manages to fit 10000 unique items in their list without an OOM error)
-            try handleCommand(cmd.Command{ .Get = 10000 }, master, tray, conn_fd, allocator, use_wayland);
+            try handleCommand(cmd.Command{ .Get = 10000 }, master, tray, conn_fd, allocator, use_wayland, wl_copies);
             tray.*.items.items.len = 0;
             master.*.items.clearRetainingCapacity();
             master.*.latest = 0;
         },
         .Last => {
-            try handleCommand(cmd.Command{ .Get = 10000 }, master, tray, conn_fd, allocator, use_wayland);
+            try handleCommand(cmd.Command{ .Get = 10000 }, master, tray, conn_fd, allocator, use_wayland, wl_copies);
         },
         .Save => {
             var db = try storage.DB.init();
