@@ -8,8 +8,6 @@ pub const c = @cImport({
     @cInclude("poll.h");
     @cInclude("X11/Xlib.h");
     @cInclude("X11/Xatom.h");
-    @cInclude("X11/Xlib.h");
-    @cInclude("X11/Xatom.h");
     @cInclude("X11/extensions/Xfixes.h");
     @cDefine("XFIXES", "1");
 });
