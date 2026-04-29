@@ -35,18 +35,18 @@ pub fn main() !void {
         }
     }
     else {
-        // Args given -> run in sender mode
+        // args given -> run in sender mode
         const arg = try std.mem.join(pg_alloc, " ", args[1..]);
         var command: cmd.Command = undefined;
         if (std.mem.eql(u8, arg, "push")) {
-            // No argument? Try to read from stdin
+            // no argument? try to read from stdin
             var stdin_reader = std.io.getStdIn().reader();
             var value = try stdin_reader.readAllAlloc(pg_alloc, 1024 * 1024);
             value = @constCast(std.mem.trimRight(u8, value, " \n"));
             command = cmd.Command{ .Push = value };
         }
         else if (std.mem.eql(u8, arg, "pipe")) {
-            // No argument? Try to read from stdin
+            // no argument? try to read from stdin
             var stdin_reader = std.io.getStdIn().reader();
             var value = try stdin_reader.readAllAlloc(pg_alloc, 1024 * 1024);
             value = @constCast(std.mem.trimRight(u8, value, " \n"));

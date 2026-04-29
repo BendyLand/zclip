@@ -13,7 +13,6 @@ pub const HELP_MSG =
     \\
     \\Available commands:
     \\  push <entry>     - Manually add an entry to the clipboard.
-    \\                     (Note: the system clipboard is *not* automatically updated when adding from a pipe.)
     \\  pipe             - Like `push`, but specifically for use in a pipe; automatically updates the system clipboard.
     \\                     (Note: `zclip pipe <entry>` will not work; it is *only* for use in pipes.)
     \\  get  <number>    - Set your system clipboard to the contents of a saved entry.
@@ -273,7 +272,8 @@ fn handleCommand(
             try master.add(val);
             master.*.allocator.free(val);
             try master.updateTray(tray);
-            _ = try std.posix.write(conn_fd, "OK\n");
+            // prints the copied text
+            try handleCommand(cmd.Command.Last, master, tray, conn_fd, allocator, use_wayland, wl_copies);
         },
         .List => |maybeVal| {
             var showAll = false;
