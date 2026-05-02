@@ -4,8 +4,6 @@ zclip is a lightweight clipboard daemon for Linux written in Zig.
 It sits in the background, watches the X11 clipboard, and automatically builds a unique list of recent clipboard entries.
 A small CLI talks to the daemon over a UNIX domain socket so you can list, recall, save/load to SQLite, or clear items without an entire GUI manager.
 
-> X11 only. Wayland native clipboards aren’t supported.
-
 ## Features
 
  - Daemonized background service (zclip with no args)
