@@ -4,4 +4,5 @@ leaks*
 .zig-cache/*
 zig-out/*
 zclip
+.envrc
 
