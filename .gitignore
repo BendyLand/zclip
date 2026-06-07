@@ -3,6 +3,7 @@ summary*
 leaks*
 .zig-cache/*
 zig-out/*
+zig-pkg/*
 zclip
 .envrc
 
