@@ -5,7 +5,7 @@ in
 pkgs.mkShell {
   buildInputs = [
     pkgs.zig_0_14
-    pkgs.zls
+    pkgs.zls_0_14
     pkgs.pkg-config
     pkgs.xorg.libX11
     pkgs.xorg.libXfixes
