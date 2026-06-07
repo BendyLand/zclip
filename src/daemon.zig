@@ -292,7 +292,7 @@ fn handleCommand(
             defer allocator.free(stream.buffer);
             // items will be displayed starting from 1
             try master.updateTray(tray);
-            var i: u8 = 0;
+            var i: u16 = 0;
             for (tray.items.items) |item| {
                 var line_it = std.mem.splitScalar(u8, item, '\n');
                 var limited_lines = std.ArrayList([]const u8).init(allocator);
